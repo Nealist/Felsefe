@@ -1,0 +1,781 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Neal A Sınıfı</title>
+  <style>
+    body {
+      background-color: #121212;
+      color: white;
+      font-family: 'Segoe UI', sans-serif;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+      font-size: 16px;
+    }
+    .header {
+      text-align: center;
+      padding: 20px;
+      font-size: 1.5rem;
+      font-weight: bold;
+      color: #00ffcc;
+    }
+    .screen-container {
+      display: none;
+      padding: 15px;
+      flex-grow: 1;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+    }
+    .screen-container.visible {
+      display: flex;
+    }
+    #chat.screen-container {
+      justify-content: flex-start;
+      padding-top: 0;
+      padding-bottom: 0;
+      position: relative; /* Yazıyor bildirimi için */
+    }
+    input, select, button {
+      padding: 8px;
+      margin: 8px 0;
+      border-radius: 5px;
+      border: none;
+      width: 95%;
+      max-width: 400px;
+      box-sizing: border-box;
+      background-color: #333;
+      color: white;
+      font-size: 0.9rem;
+    }
+    button {
+      background-color: #00ffcc;
+      color: #121212;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background-color 0.2s ease;
+    }
+    button:hover {
+      background-color: #00e6b3;
+    }
+    .chat-box {
+      flex-grow: 1;
+      overflow-y: auto;
+      margin-top: 15px;
+      margin-bottom: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      border: 1px solid #333;
+      padding: 8px;
+      border-radius: 8px;
+      width: 95%;
+      max-width: 600px;
+    }
+    .message-wrapper {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      position: relative;
+      margin-top: 20px;
+      touch-action: pan-y;
+      transition: transform 0.2s ease;
+    }
+    .chat-box .message-wrapper:first-child {
+      margin-top: 0;
+    }
+    .message-wrapper.right {
+      align-items: flex-end;
+    }
+    .message {
+      padding: 10px;
+      border-radius: 12px;
+      max-width: 80%;
+      position: relative;
+      word-wrap: break-word;
+      min-width: 60px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    }
+    .message.left {
+      background-color: #2c2c2c;
+      align-self: flex-start;
+    }
+    .message.right {
+      background-color: #00ffcc;
+      color: black;
+      align-self: flex-end;
+    }
+    .message-info {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 0.65rem;
+      color: rgba(255, 255, 255, 0.6);
+      letter-spacing: 0.5px;
+      white-space: nowrap;
+      opacity: 0;
+      transition: opacity 0.2s ease-in-out;
+    }
+    .message-wrapper.show-time .message-info {
+      opacity: 1;
+    }
+    .message-wrapper.left .message-info {
+      right: 5px;
+    }
+    .message-wrapper.right .message-info {
+      left: 5px;
+    }
+    .reply-context {
+      background-color: rgba(255, 255, 255, 0.1);
+      border-left: 3px solid #00ffcc;
+      padding: 5px 8px;
+      border-radius: 5px;
+      margin-bottom: 5px;
+      font-size: 0.7rem;
+      color: #444;
+      max-width: 100%;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+    .reply-context strong {
+      color: #007a63;
+    }
+    #messageInputContainer {
+      display: flex;
+      width: 95%;
+      max-width: 600px;
+      padding-bottom: 15px;
+      align-items: center;
+    }
+    #messageInput {
+      flex-grow: 1;
+      margin-right: 8px;
+      max-width: none;
+      font-size: 0.9rem;
+    }
+    #sendButton {
+      width: auto;
+      padding-left: 15px;
+      padding-right: 15px;
+      max-width: fit-content;
+      margin: 0;
+      font-size: 0.9rem;
+    }
+    #replyingTo {
+      display: none;
+      width: 95%;
+      max-width: 600px;
+      margin-bottom: 5px;
+      color: rgba(255,255,255,0.7);
+      background-color: #282828;
+      padding: 8px 10px;
+      border-radius: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.85rem;
+    }
+    #replyingTo button {
+      background: none;
+      color: white;
+      border: none;
+      padding: 0;
+      margin: 0;
+      cursor: pointer;
+      font-size: 1rem;
+      line-height: 1;
+      width: auto;
+      max-width: none;
+    }
+    .emoji-picker-container {
+      position: absolute;
+      top: calc(100% + 25px);
+      left: 50%;
+      transform: translateX(-50%);
+      background-color: #2c2c2c;
+      border-radius: 15px;
+      padding: 6px;
+      display: none;
+      align-items: center;
+      gap: 6px;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+      z-index: 10;
+      white-space: nowrap;
+      max-width: 90%;
+      overflow-x: auto;
+    }
+    .emoji-picker-container.visible {
+      display: flex;
+    }
+    .emoji-picker-container button {
+      background: none;
+      border: none;
+      font-size: 1.2rem;
+      cursor: pointer;
+      padding: 0;
+      margin: 0;
+      width: auto;
+      max-width: none;
+    }
+    .message-reactions {
+      position: absolute;
+      bottom: -15px;
+      display: flex;
+      flex-direction: row-reverse;
+      gap: 4px;
+      align-items: center;
+      line-height: 1;
+      background-color: #2c2c2c;
+      border-radius: 10px;
+      padding: 2px 6px;
+      font-size: 0.7rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+      z-index: 5;
+      max-width: 80%;
+      flex-wrap: wrap;
+    }
+    .message-wrapper.right .message-reactions {
+      right: 0;
+      background-color: #007a63;
+    }
+    .message-wrapper.left .message-reactions {
+      left: 0;
+      background-color: #2c2c2c;
+    }
+    .message-reactions span {
+      display: inline-flex;
+      align-items: center;
+      font-size: 0.8rem;
+      color: white;
+      background-color: transparent;
+      padding: 1px 3px;
+      border-radius: 5px;
+      transition: background-color 0.2s ease;
+    }
+    .message-reactions span.user-reacted {
+      background-color: rgba(255, 255, 255, 0.3);
+    }
+    .message-reactions span small {
+      font-size: 0.6rem;
+      margin-left: 2px;
+      font-weight: bold;
+      color: white;
+    }
+    .typing-indicator {
+      position: absolute;
+      bottom: 70px; /* Mesaj giriş alanının üstüne */
+      left: 15px;
+      background-color: #2c2c2c;
+      color: #00ffcc;
+      padding: 5px 10px;
+      border-radius: 10px;
+      font-size: 0.75rem;
+      display: none;
+      z-index: 10;
+      max-width: 80%;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .typing-indicator.visible {
+      display: block;
+    }
+    @media (max-width: 600px) {
+      .header {
+        font-size: 1.25rem;
+        padding: 15px;
+      }
+      input, select, button {
+        width: 95%;
+        max-width: none;
+        font-size: 0.85rem;
+      }
+      .screen-container {
+        padding: 10px;
+      }
+      .chat-box {
+        width: 98%;
+        padding: 5px;
+      }
+      #messageInputContainer, #replyingTo {
+        width: 98%;
+      }
+      .message {
+        max-width: 85%;
+      }
+      .emoji-picker-container {
+        font-size: 1rem;
+      }
+      .message-reactions {
+        font-size: 0.65rem;
+      }
+      .message-reactions span {
+        font-size: 0.75rem;
+      }
+      .message-reactions span small {
+        font-size: 0.55rem;
+      }
+      .typing-indicator {
+        font-size: 0.7rem;
+        bottom: 60px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">Neal A Sınıfı</div>
+  <div id="password-screen" class="screen-container visible">
+    <p>Ana şifreyi girin:</p>
+    <input type="password" id="mainPassword" placeholder="Şifre">
+    <button onclick="window.checkMainPassword()">Giriş</button>
+  </div>
+  <div id="user-login" class="screen-container">
+    <p>Kullanıcı Seç:</p>
+    <select id="userSelect">
+      <option value="Baran">Baran</option>
+      <option value="Miraç">Miraç</option>
+      <!-- Daha fazla kullanıcı eklenebilir -->
+    </select>
+    <input type="password" id="userPassword" placeholder="Şifre (eğer varsa)">
+    <button onclick="window.checkUserLogin()">Giriş Yap</button>
+  </div>
+  <div id="chat" class="screen-container">
+    <div class="chat-box" id="chatBox"></div>
+    <div id="typingIndicator" class="typing-indicator"></div>
+    <div id="replyingTo">
+      <span>Yanıtlanıyor: <span id="replyMessageText" style="font-weight: bold;"></span></span>
+      <button onclick="window.cancelReply()">X</button>
+    </div>
+    <div id="messageInputContainer">
+      <input type="text" id="messageInput" placeholder="Mesaj yaz...">
+      <button id="sendButton" onclick="window.sendMessage()">Gönder</button>
+    </div>
+  </div>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.5.2/firebase-app.js";
+    import { getDatabase, ref, push, onChildAdded, update, get, onChildChanged, onValue, set, remove } from "https://www.gstatic.com/firebasejs/10.5.2/firebase-database.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyBvpbHNav4d-TlmVx7SVbMUlolggv1JpIc",
+      authDomain: "grupsohbet-3a1ba.firebaseapp.com",
+      databaseURL: "https://grupsohbet-3a1ba-default-rtdb.europe-west1.firebasedatabase.app",
+      projectId: "grupsohbet-3a1ba",
+      storageBucket: "grupsohbet-3a1ba.firebasestorage.app",
+      messagingSenderId: "316585268529",
+      appId: "1:316585268529:web:036fe0d9660f2f0a89cc10"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+    const messagesRef = ref(db, 'messages');
+    const typingRef = ref(db, 'typing');
+
+    const userPasswords = {
+      "Baran": "baran1313",
+      "Miraç": ""
+      // Daha fazla kullanıcı eklenebilir
+    };
+
+    let currentUser = "";
+    let replyingToMessageId = null;
+    let replyingToMessageText = "";
+    let replyingToMessageUser = "";
+    const messageElements = {};
+    let typingTimeout = null;
+
+    window.showScreen = function(screenId) {
+      document.querySelectorAll('.screen-container').forEach(screen => {
+        screen.classList.remove('visible');
+      });
+      document.getElementById(screenId).classList.add('visible');
+      if (screenId === 'chat') {
+        setTimeout(() => {
+          const chatBox = document.getElementById("chatBox");
+          chatBox.scrollTop = chatBox.scrollHeight;
+        }, 100);
+      }
+    };
+
+    window.checkMainPassword = function() {
+      const pass = document.getElementById("mainPassword").value;
+      if (pass === "10aekibi") {
+        window.showScreen("user-login");
+      } else {
+        alert("Yanlış şifre.");
+      }
+    };
+
+    window.checkUserLogin = function() {
+      const user = document.getElementById("userSelect").value;
+      const pass = document.getElementById("userPassword").value;
+
+      if (userPasswords[user] === pass) {
+        currentUser = user;
+        window.showScreen("chat");
+        listenForMessages();
+        setupTypingIndicator();
+      } else {
+        alert("Şifre yanlış!");
+      }
+    };
+
+    window.sendMessage = function() {
+      const messageInput = document.getElementById("messageInput");
+      const messageText = messageInput.value.trim();
+      if (!messageText) return;
+
+      const messageData = {
+        user: currentUser,
+        text: messageText,
+        time: Date.now(),
+        replyTo: replyingToMessageId ? {
+          id: replyingToMessageId,
+          text: replyingToMessageText,
+          user: replyingToMessageUser
+        } : null
+      };
+
+      push(messagesRef, messageData).then(() => {
+        messageInput.value = "";
+        window.cancelReply();
+        stopTyping(); // Mesaj gönderildiğinde yazma durumunu sıfırla
+        const chatBox = document.getElementById("chatBox");
+        setTimeout(() => {
+          chatBox.scrollTop = chatBox.scrollHeight;
+        }, 100);
+      }).catch(error => {
+        console.error("Mesaj gönderme hatası:", error);
+        alert("Mesaj gönderilemedi!");
+      });
+    };
+
+    window.cancelReply = function() {
+      replyingToMessageId = null;
+      replyingToMessageText = "";
+      replyingToMessageUser = "";
+      document.getElementById("replyingTo").style.display = "none";
+      document.getElementById("replyMessageText").textContent = "";
+    };
+
+    window.reactToMessage = async function(messageId, emoji) {
+      const reactionPath = `messages/${messageId}/reactions/${emoji}`;
+      const reactionRef = ref(db, reactionPath);
+
+      try {
+        const snapshot = await get(reactionRef);
+        let usersReacted = snapshot.val() || {};
+        if (usersReacted[currentUser]) {
+          usersReacted[currentUser] = null;
+        } else {
+          usersReacted[currentUser] = true;
+        }
+        await update(ref(db), { [reactionPath]: usersReacted });
+      } catch (error) {
+        console.error("Tepki güncelleme hatası:", error);
+      }
+    };
+
+    function startTyping() {
+      const userTypingRef = ref(db, `typing/${currentUser}`);
+      set(userTypingRef, { timestamp: Date.now() }).catch(error => {
+        console.error("Yazma durumu güncelleme hatası:", error);
+      });
+
+      clearTimeout(typingTimeout);
+      typingTimeout = setTimeout(() => {
+        stopTyping();
+      }, 2000); // 2 saniye hareketsiz kalırsa yazma durumunu sil
+    }
+
+    function stopTyping() {
+      const userTypingRef = ref(db, `typing/${currentUser}`);
+      remove(userTypingRef).catch(error => {
+        console.error("Yazma durumu silme hatası:", error);
+      });
+      clearTimeout(typingTimeout);
+    }
+
+    function setupTypingIndicator() {
+      const messageInput = document.getElementById("messageInput");
+      messageInput.addEventListener('input', () => {
+        startTyping();
+      });
+
+      onValue(typingRef, (snapshot) => {
+        const typingUsers = snapshot.val() || {};
+        const activeUsers = Object.keys(typingUsers).filter(user => {
+          const timestamp = typingUsers[user]?.timestamp;
+          return timestamp && (Date.now() - timestamp < 3000); // 3 saniye içinde aktif olanlar
+        }).filter(user => user !== currentUser); // Kendi adını hariç tut
+
+        const typingIndicator = document.getElementById("typingIndicator");
+        if (activeUsers.length === 0) {
+          typingIndicator.classList.remove('visible');
+          typingIndicator.textContent = '';
+          return;
+        }
+
+        let displayText;
+        if (activeUsers.length >= 6) {
+          displayText = activeUsers.map(user => user[0]).join(', ') + ' yazıyor...';
+        } else {
+          displayText = activeUsers.join(', ') + ' yazıyor...';
+        }
+
+        typingIndicator.textContent = displayText;
+        typingIndicator.classList.add('visible');
+      });
+    }
+
+    function hideEmojiPicker() {
+      document.querySelectorAll('.emoji-picker-container').forEach(picker => {
+        picker.classList.remove('visible');
+      });
+    }
+
+    function hideTimestamp(messageWrapper) {
+      messageWrapper.classList.remove('show-time');
+    }
+
+    function updateReactions(messageId, reactions) {
+      const reactionsDiv = messageElements[messageId]?.reactionsDiv;
+      if (!reactionsDiv) return;
+
+      reactionsDiv.innerHTML = "";
+      if (reactions) {
+        Object.entries(reactions).forEach(([emoji, users]) => {
+          const validUsers = Object.keys(users || {}).filter(user => users[user]);
+          if (validUsers.length > 0) {
+            const reactionSpan = document.createElement("span");
+            reactionSpan.textContent = `${emoji} `;
+            const countSpan = document.createElement("small");
+            countSpan.textContent = validUsers.length;
+            reactionSpan.appendChild(countSpan);
+            if (validUsers.includes(currentUser)) {
+              reactionSpan.classList.add("user-reacted");
+            }
+            reactionsDiv.appendChild(reactionSpan);
+          }
+        });
+      }
+    }
+
+    function listenForMessages() {
+      const chatBox = document.getElementById("chatBox");
+      chatBox.innerHTML = "";
+
+      onChildAdded(messagesRef, (snapshot) => {
+        const msg = snapshot.val();
+        const messageId = snapshot.key;
+        displayMessage(msg, messageId);
+        updateReactions(messageId, msg.reactions);
+        setTimeout(() => {
+          chatBox.scrollTop = chatBox.scrollHeight;
+        }, 100);
+      });
+
+      onChildChanged(messagesRef, (snapshot) => {
+        const msg = snapshot.val();
+        const messageId = snapshot.key;
+        updateReactions(messageId, msg.reactions);
+      });
+    }
+
+    function displayMessage(msg, messageId) {
+      const chatBox = document.getElementById("chatBox");
+      const messageWrapper = document.createElement("div");
+      messageWrapper.classList.add("message-wrapper");
+      messageWrapper.dataset.messageId = messageId;
+      messageWrapper.classList.add(msg.user === currentUser ? "right" : "left");
+
+      if (msg.replyTo) {
+        const replyContext = document.createElement("div");
+        replyContext.classList.add("reply-context");
+        replyContext.innerHTML = `<strong>${msg.replyTo.user}</strong>: ${msg.replyTo.text}`;
+        messageWrapper.appendChild(replyContext);
+      }
+
+      const messageDiv = document.createElement("div");
+      messageDiv.classList.add("message", msg.user === currentUser ? "right" : "left");
+      messageDiv.textContent = msg.text;
+
+      const messageInfo = document.createElement("div");
+      messageInfo.classList.add("message-info");
+      const date = new Date(msg.time);
+      messageInfo.textContent = date.toLocaleString('tr-TR', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' });
+      messageWrapper.appendChild(messageDiv);
+      messageWrapper.appendChild(messageInfo);
+
+      const emojiPickerContainer = document.createElement('div');
+      emojiPickerContainer.classList.add('emoji-picker-container');
+      emojiPickerContainer.innerHTML = `
+        <button data-emoji="❤️">❤️</button>
+        <button data-emoji="😂">😂</button>
+        <button data-emoji="😢">😢</button>
+        <button data-emoji="😡">😡</button>
+        <button data-emoji="👍">👍</button>
+        <button data-emoji="😊">😊</button>
+        <button data-emoji="🎉">🎉</button>
+        <button data-emoji-other="true">🎨</button>
+      `;
+      messageWrapper.appendChild(emojiPickerContainer);
+
+      const reactionsDiv = document.createElement("div");
+      reactionsDiv.classList.add("message-reactions");
+      messageWrapper.appendChild(reactionsDiv);
+
+      emojiPickerContainer.querySelectorAll('button').forEach(button => {
+        button.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const targetEmoji = button.dataset.emoji;
+          if (targetEmoji) {
+            window.reactToMessage(messageId, targetEmoji);
+          } else if (button.dataset.emojiOther) {
+            const tempInput = document.createElement('input');
+            tempInput.type = 'text';
+            tempInput.style.position = 'absolute';
+            tempInput.style.left = '-9999px';
+            document.body.appendChild(tempInput);
+            tempInput.focus();
+            if (navigator.userAgent.match(/iPad|iPhone|iPod|Android/i)) {
+              tempInput.setAttribute('type', 'text');
+              tempInput.focus();
+            }
+            tempInput.addEventListener('input', () => {
+              const selectedEmoji = tempInput.value.trim();
+              if (selectedEmoji) {
+                window.reactToMessage(messageId, selectedEmoji);
+                tempInput.value = '';
+              }
+              if (tempInput.parentNode) {
+                document.body.removeChild(tempInput);
+              }
+            });
+            tempInput.addEventListener('blur', () => {
+              if (tempInput.parentNode) {
+                document.body.removeChild(tempInput);
+              }
+            });
+            if (navigator.userAgent.match(/iPad|iPhone|iPod/i)) {
+              const range = document.createRange();
+              range.selectNodeContents(tempInput);
+              const selection = window.getSelection();
+              selection.removeAllRanges();
+              selection.addRange(range);
+            }
+          }
+          hideEmojiPicker();
+        });
+      });
+
+      let startX;
+      let isMoving = false;
+      messageWrapper.addEventListener('touchstart', (e) => {
+        startX = e.touches[0].clientX;
+        isMoving = false;
+      });
+      messageWrapper.addEventListener('touchmove', (e) => {
+        isMoving = true;
+        const currentX = e.touches[0].clientX;
+        const deltaX = currentX - startX;
+        const translateX = Math.max(-50, Math.min(50, deltaX));
+        messageWrapper.style.transform = `translateX(${translateX}px)`;
+      });
+      messageWrapper.addEventListener('touchend', (e) => {
+        messageWrapper.style.transform = 'translateX(0)';
+        if (!isMoving) {
+          messageWrapper.classList.toggle('show-time');
+          hideEmojiPicker();
+          emojiPickerContainer.classList.toggle('visible');
+          if (messageWrapper.classList.contains('show-time')) {
+            setTimeout(() => hideTimestamp(messageWrapper), 2000);
+          }
+          return;
+        }
+        const endX = e.changedTouches[0].clientX;
+        const deltaX = endX - startX;
+        if (Math.abs(deltaX) > 50) {
+          if (deltaX > 0) {
+            replyingToMessageId = messageId;
+            replyingToMessageText = msg.text;
+            replyingToMessageUser = msg.user;
+            const replyText = document.getElementById("replyMessageText");
+            replyText.textContent = `${msg.user}: ${msg.text}`;
+            document.getElementById("replyingTo").style.display = "flex";
+            document.getElementById("messageInput").focus();
+          } else {
+            messageWrapper.classList.add('show-time');
+            hideEmojiPicker();
+            setTimeout(() => hideTimestamp(messageWrapper), 2000);
+          }
+        }
+      });
+
+      messageWrapper.addEventListener('click', () => {
+        messageWrapper.classList.toggle('show-time');
+        hideEmojiPicker();
+        emojiPickerContainer.classList.toggle('visible');
+        if (messageWrapper.classList.contains('show-time')) {
+          setTimeout(() => hideTimestamp(messageWrapper), 2000);
+        }
+      });
+
+      chatBox.appendChild(messageWrapper);
+      messageElements[messageId] = { wrapper: messageWrapper, reactionsDiv };
+      setTimeout(() => {
+        chatBox.scrollTop = chatBox.scrollHeight;
+      }, 100);
+    }
+
+    document.getElementById("messageInput").addEventListener("keypress", (e) => {
+      if (e.key === "Enter") {
+        window.sendMessage();
+      }
+    });
+  </script>
+</body>
+</html>
